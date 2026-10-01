@@ -88,9 +88,44 @@
   const declared = form.querySelector('input[name="declared_students"]');
   if (declared) declared.addEventListener('input', () => markStep(4, declared.value !== ''));
 
-  // ---- Inject snapshot just before submit ----
-  form.addEventListener('submit', e => {
+  form.addEventListener('submit', async (e) => {
     if (!state.fp || !state.gps || !state.snap) { e.preventDefault(); return; }
+
+    // If offline → queue locally, don't POST.
+    if (!navigator.onLine) {
+      e.preventDefault();
+      if (!blob) { alert('Snapshot missing'); return; }
+
+      const b64 = await new Promise(res => {
+        const r = new FileReader();
+        r.onloadend = () => res(r.result);
+        r.readAsDataURL(blob);
+      });
+
+      const ev = {
+        client_uuid: window.GSDSQueue.uuid(),
+        client_timestamp: new Date().toISOString(),
+        type: 'inspection',
+        payload: {
+          school_id: parseInt(form.querySelector('input[name="school_id"]').value, 10),
+          gps_lat: parseFloat(document.getElementById('gpsLat').value),
+          gps_lng: parseFloat(document.getElementById('gpsLng').value),
+          declared_students: parseInt(form.querySelector('input[name="declared_students"]').value, 10),
+          fingerprint_token: document.getElementById('fpToken').value,
+          snapshot_b64: b64,
+        },
+      };
+      await window.GSDSQueue.put(ev);
+      window.GSDS.toast(
+        'Saved offline',
+        'Will sync automatically when online.',
+        'warn'
+      );
+      setTimeout(() => { window.location = '/dashboard'; }, 1200);
+      return;
+    }
+
+    // Online → attach snapshot as before and let the form POST normally.
     if (blob) {
       const dt = new DataTransfer();
       dt.items.add(new File([blob], 'snapshot.jpg', { type: 'image/jpeg' }));
@@ -100,7 +135,6 @@
       form.appendChild(inp);
     }
   });
-
   // ---- Stepper visuals ----
   function markStep(n, done = true) {
     const li = document.querySelector(`#stepper li[data-step="${n}"]`);

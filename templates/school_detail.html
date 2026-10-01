@@ -68,6 +68,13 @@
 </div>
 {% endif %}
 
+<div class="card mb-4">
+  <h2 class="card-title" style="font-size:1.1rem">Triangulation</h2>
+  <div id="triFull" class="stack">
+    <span class="hint">Loading…</span>
+  </div>
+</div>
+
 <h2>Parent reports</h2>
 {% if reports %}
 <ul style="padding-left:18px">
@@ -82,5 +89,38 @@
 {% else %}
 <p class="hint">No reports from parents yet.</p>
 {% endif %}
+
+{% block scripts %}
+<script>
+(async function () {
+  const el = document.getElementById('triFull');
+  if (!el) return;
+  const r = await fetch(`/api/triangulation/{{ school.id }}`, { credentials: 'same-origin' });
+  if (!r.ok) { el.innerHTML = '<span class="hint">Unavailable</span>'; return; }
+  const d = await r.json();
+  const tone = { agree: 'ok', conflict: 'bad', unknown: 'warn' }[d.signal] || 'warn';
+  const c = d.components;
+  el.innerHTML = `
+    <div><span class="pill ${tone}"><span class="dot"></span>${d.signal} · score ${d.score}</span></div>
+    <table class="grid" style="min-width:0">
+      <thead><tr><th>Source</th><th>Score</th><th>Weight</th><th>Detail</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Inspection</td><td>${c.inspection.score}</td><td>${c.inspection.weight}</td>
+          <td>${c.inspection.age_days === null ? 'never' : c.inspection.age_days + 'd ago'}</td>
+        </tr>
+        <tr>
+          <td>Parent reports</td><td>${c.parents.score}</td><td>${c.parents.weight}</td>
+          <td>${c.parents.reports} total · ${c.parents.negatives} negative</td>
+        </tr>
+        <tr>
+          <td>Recency</td><td>${c.recency.score}</td><td>${c.recency.weight}</td>
+          <td>decay over 30 days</td>
+        </tr>
+      </tbody>
+    </table>`;
+})();
+</script>
+{% endblock %}
 
 {% endblock %}

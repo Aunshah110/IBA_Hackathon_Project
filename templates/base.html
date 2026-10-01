@@ -8,6 +8,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
+  <div class="bg-layer" aria-hidden="true"></div>
+  <div class="bg-scrim" aria-hidden="true"></div>
+  <span class="pill warn" id="pendingCount" style="display:none"></span>
+
   <a href="#main" class="sr-only">Skip to content</a>
 
   {% if current_user.is_authenticated %}
@@ -20,20 +24,14 @@
 
       <nav class="nav" aria-label="Primary">
         <a href="{{ url_for('dashboard') }}"
-           class="{{ 'active' if request.endpoint == 'dashboard' }}">
-          <span aria-hidden="true">📋</span> Dashboard
-        </a>
+           class="{{ 'active' if request.endpoint == 'dashboard' }}">Dashboard</a>
         {% if current_user.role in ['district','inspector'] %}
         <a href="{{ url_for('audit_log') }}"
-           class="{{ 'active' if request.endpoint == 'audit_log' }}">
-          <span aria-hidden="true">🔐</span> Audit
-        </a>
+           class="{{ 'active' if request.endpoint == 'audit_log' }}">Audit</a>
         {% endif %}
         {% if current_user.is_parent %}
         <a href="{{ url_for('parent_report') }}"
-           class="{{ 'active' if request.endpoint == 'parent_report' }}">
-          <span aria-hidden="true">✉️</span> Report
-        </a>
+           class="{{ 'active' if request.endpoint == 'parent_report' }}">Report</a>
         {% endif %}
         <a href="{{ url_for('help_page') }}"
            class="{{ 'active' if request.endpoint == 'help_page' }}">Help</a>
@@ -51,17 +49,14 @@
   {% endif %}
 
   <main id="main" class="container" role="main">
-    {# Structured verify-result banner (HCI: feedback & closure #12) #}
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat, m in msgs %}
         {% if cat == 'verify_result' %}
-          {% set d = m | tojson | safe %}
-          <div id="verifyResult" data-payload='{{ d }}'></div>
+          <div id="verifyResult" data-payload='{{ m | tojson | safe }}'></div>
         {% endif %}
       {% endfor %}
     {% endwith %}
 
-    {# Standard flashes #}
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat, m in msgs if cat != 'verify_result' %}
         <div class="banner {{ 'ok' if cat=='success' else 'bad' if cat=='error' else 'info' }}"
@@ -81,7 +76,7 @@
   </main>
 
   <footer class="footer">
-    {{ app_full }} · v2 · {{ current_year }}
+    {{ app_full }} · {{ current_year }}
   </footer>
 
   <div id="toast-host" aria-live="polite" aria-atomic="true"></div>

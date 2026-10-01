@@ -110,6 +110,18 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
 
+def role_required(*roles):
+    def deco(fn):
+        @wraps(fn)
+        @login_required
+        def wrapper(*a, **kw):
+            if current_user.role not in roles:
+                abort(403)
+            return fn(*a, **kw)
+        return wrapper
+    return deco
+
+
 # =========================================================
 # 1b. TEMPLATE CONTEXT HELPERS (HCI: recognition, status)
 # =========================================================
@@ -259,6 +271,421 @@ class ParentReport(db.Model):
     text = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     ip_hash = db.Column(db.String(64))  # rate-limit / de-dupe, no raw IP stored
+
+
+
+class SyncEvent(db.Model):
+    """
+    Idempotency ledger for offline-queued client events.
+    A client generates a UUID per event; server records it once.
+    Replay with the same UUID → no duplicate inspection, returns cached response.
+    """
+    __tablename__ = "sync_events"
+    id = db.Column(db.Integer, primary_key=True)
+    client_uuid = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    client_timestamp = db.Column(db.DateTime, nullable=False)
+    server_timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    actor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    inspection_id = db.Column(db.Integer, db.ForeignKey("inspections.id"), nullable=True)
+    response_json = db.Column(db.Text, nullable=False)
+    was_conflict = db.Column(db.Boolean, default=False)
+
+
+class TriangulationScore(db.Model):
+    """
+    Cached triangulation result per school. Recomputed after every
+    inspection, parent report, or sync. Never hand-edited.
+    """
+    __tablename__ = "triangulation_scores"
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), unique=True, nullable=False)
+    score = db.Column(db.Float, default=0.0)          # 0..1, higher = more agreement
+    signal = db.Column(db.String(16), default="unknown")  # agree|conflict|unknown
+    components_json = db.Column(db.Text, nullable=False, default="{}")
+    computed_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+    # =========================================================
+# 3b. OFFLINE SYNC HELPERS (HCI: flexibility & efficiency #7)
+# =========================================================
+def _parse_iso(ts: str) -> datetime:
+    """Parse an ISO-8601 string from the client. Reject if older than 72h."""
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        raise ValueError("invalid timestamp")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+    if age_hours > 72:
+        raise ValueError("event too old (>72h) — reject to prevent backdating")
+    if age_hours < -1:
+        raise ValueError("event timestamp is in the future")
+    return dt
+
+
+def get_or_create_sync_event(client_uuid: str, payload: dict,
+                             actor_id: int) -> tuple[SyncEvent, bool]:
+    """
+    Returns (event, created_new). If client_uuid already exists,
+    we return the cached response — the caller must NOT re-run side effects.
+    """
+    existing = SyncEvent.query.filter_by(client_uuid=client_uuid).first()
+    if existing:
+        return existing, False
+    ev = SyncEvent(
+        client_uuid=client_uuid,
+        client_timestamp=_parse_iso(payload.get("client_timestamp", "")),
+        actor_id=actor_id,
+        response_json="{}",
+    )
+    db.session.add(ev)
+    db.session.flush()
+    return ev, True
+
+
+# =========================================================
+# 3c. TRIANGULATION (HCI: help users recover from errors #9)
+# =========================================================
+TRIANGULATION_WINDOW_DAYS = 30
+
+
+def compute_triangulation(school: School) -> dict:
+    """
+    Weigh three independent sources and return a normalized score.
+
+    Sources and weights:
+      1. Latest inspection (weight 0.5)   — inspector's physical evidence
+      2. Parent reports in window (0.3)   — ground-truth community signal
+      3. Inspection recency (0.2)         — decay if unverified for long
+
+    Returns dict:
+      {
+        "score": 0..1,
+        "signal": "agree" | "conflict" | "unknown",
+        "components": {...explainable...}
+      }
+
+    Design rule: never a black box. Every number is traceable.
+    """
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=TRIANGULATION_WINDOW_DAYS)
+
+    # --- Source 1: latest inspection ---
+    latest = (
+        Inspection.query.filter_by(school_id=school.id)
+        .order_by(Inspection.timestamp.desc())
+        .first()
+    )
+    if latest:
+        insp_score = 1.0 if latest.result == "verified" else 0.0
+        insp_age_days = (now - latest.timestamp.replace(tzinfo=timezone.utc)).days
+    else:
+        insp_score = 0.0
+        insp_age_days = None
+
+    # --- Source 2: parent reports in window ---
+    reports = (
+        ParentReport.query
+        .filter(ParentReport.school_id == school.id)
+        .filter(ParentReport.created_at >= window_start)
+        .all()
+    )
+    negative_cats = {"no_teacher", "no_class", "closed"}
+    negatives = sum(1 for r in reports if r.category in negative_cats)
+    positives = len(reports) - negatives
+
+    if not reports:
+        parent_score = 0.5  # neutral — no signal is not a negative signal
+    else:
+        parent_score = max(0.0, 1.0 - (negatives / len(reports)))
+
+    # --- Source 3: recency decay ---
+    if insp_age_days is None:
+        recency_score = 0.0
+    else:
+        recency_score = max(0.0, 1.0 - (insp_age_days / TRIANGULATION_WINDOW_DAYS))
+
+    score = (
+        0.50 * insp_score +
+        0.30 * parent_score +
+        0.20 * recency_score
+    )
+
+    # --- Signal classification ---
+    if latest is None and not reports:
+        signal = "unknown"
+    elif score >= 0.65:
+        signal = "agree"
+    elif score <= 0.35:
+        signal = "conflict"
+    else:
+        signal = "unknown"
+
+    return {
+        "score": round(score, 3),
+        "signal": signal,
+        "components": {
+            "inspection": {
+                "score": round(insp_score, 3),
+                "age_days": insp_age_days,
+                "weight": 0.50,
+            },
+            "parents": {
+                "score": round(parent_score, 3),
+                "reports": len(reports),
+                "negatives": negatives,
+                "positives": positives,
+                "weight": 0.30,
+            },
+            "recency": {
+                "score": round(recency_score, 3),
+                "weight": 0.20,
+            },
+        },
+    }
+
+
+def refresh_triangulation(school_id: int) -> TriangulationScore:
+    """Recompute and persist. Called after inspection / report / sync."""
+    school = db.session.get(School, school_id)
+    if not school:
+        raise ValueError(f"school {school_id} not found")
+    result = compute_triangulation(school)
+    row = TriangulationScore.query.filter_by(school_id=school_id).first()
+    if not row:
+        row = TriangulationScore(school_id=school_id)
+        db.session.add(row)
+    row.score = result["score"]
+    row.signal = result["signal"]
+    row.components_json = json.dumps(result["components"], sort_keys=True)
+    row.computed_at = datetime.now(timezone.utc)
+    return row
+
+
+# =========================================================
+# 10b. OFFLINE SYNC API
+# =========================================================
+@app.route("/api/sync", methods=["POST"])
+@role_required("inspector")
+def api_sync():
+    """
+    Accepts a batch of queued events from the browser.
+    Each event is idempotent via client_uuid.
+
+    Request JSON:
+    {
+      "events": [
+        {
+          "client_uuid": "uuid-v4",
+          "client_timestamp": "2026-06-30T12:34:56Z",
+          "type": "inspection",
+          "payload": {
+             "school_id": 3,
+             "gps_lat": 27.5295, "gps_lng": 68.7592,
+             "declared_students": 42,
+             "fingerprint_token": "...",
+             "snapshot_b64": "data:image/jpeg;base64,..."
+          }
+        },
+        ...
+      ]
+    }
+
+    Response:
+    { "results": [ {"uuid":..., "status":"accepted|duplicate|rejected",
+                    "inspection_id":..., "reason": null|"..."} ] }
+    """
+    body = request.get_json(silent=True) or {}
+    events = body.get("events") or []
+    if not isinstance(events, list) or len(events) > 50:
+        return jsonify({"error": "events must be a list of ≤50 items"}), 400
+
+    results = []
+    for ev in events:
+        uuid = (ev.get("client_uuid") or "").strip()
+        if not uuid:
+            results.append({"uuid": None, "status": "rejected", "reason": "missing client_uuid"})
+            continue
+
+        try:
+            sync_row, is_new = get_or_create_sync_event(uuid, ev, current_user.id)
+        except ValueError as e:
+            results.append({"uuid": uuid, "status": "rejected", "reason": str(e)})
+            continue
+
+        if not is_new:
+            cached = json.loads(sync_row.response_json)
+            results.append({
+                "uuid": uuid,
+                "status": "duplicate",
+                "inspection_id": sync_row.inspection_id,
+                "was_conflict": sync_row.was_conflict,
+                "previous": cached,
+            })
+            continue
+
+        # --- Fresh event: process it ---
+        try:
+            insp_id, conflict = _process_sync_inspection(ev, current_user)
+        except ValueError as e:
+            db.session.rollback()
+            results.append({"uuid": uuid, "status": "rejected", "reason": str(e)})
+            continue
+
+        sync_row.inspection_id = insp_id
+        sync_row.was_conflict = conflict
+        sync_row.response_json = json.dumps({"inspection_id": insp_id, "conflict": conflict})
+        db.session.commit()
+
+        results.append({
+            "uuid": uuid,
+            "status": "accepted",
+            "inspection_id": insp_id,
+            "was_conflict": conflict,
+        })
+
+    return jsonify({"results": results})
+
+
+def _process_sync_inspection(ev: dict, actor: User) -> tuple[int, bool]:
+    """
+    Runs the same logic as /verify but from a JSON payload.
+    Returns (inspection_id, was_conflict).
+
+    Conflict detection: if the school's verification_status changed
+    AFTER the client_timestamp of this event, we accept the inspection
+    but mark it as a conflict and force result=flagged.
+    """
+    p = ev.get("payload") or {}
+    school = db.session.get(School, int(p.get("school_id", 0)))
+    if not school:
+        raise ValueError("school not found")
+
+    client_ts = _parse_iso(ev["client_timestamp"])
+    conflict = False
+    if school.last_verified_at:
+        last = school.last_verified_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if last > client_ts:
+            conflict = True  # someone verified this school more recently than the queued event
+
+    # GPS
+    try:
+        gps_lat = float(p["gps_lat"]); gps_lng = float(p["gps_lng"])
+    except (KeyError, ValueError, TypeError):
+        raise ValueError("invalid GPS")
+    in_fence, distance_m = within_school_radius(gps_lat, gps_lng, school)
+
+    # Fingerprint
+    fp_token = (p.get("fingerprint_token") or "").encode()
+    fp_ok = bool(fp_token) and verify_fingerprint(actor, fp_token)
+    db.session.add(BiometricLog(
+        user_id=actor.id,
+        template_hash=hashlib.sha256(fp_token).hexdigest() if fp_token else "",
+        matched=fp_ok,
+    ))
+
+    # Snapshot (base64)
+    detected = 0
+    img_hash = ""
+    snap_path_rel = None
+    snapshot_b64 = p.get("snapshot_b64")
+    if snapshot_b64:
+        try:
+            header, b64 = snapshot_b64.split(",", 1)
+            raw = base64.b64decode(b64)
+            img_hash = hashlib.sha256(raw).hexdigest()
+            fname = secure_filename(
+                f"{school.id}_sync_{int(datetime.now(timezone.utc).timestamp())}_{secrets.token_hex(4)}.jpg"
+            )
+            abs_path = os.path.join(app.config["UPLOAD_FOLDER"], "snapshots", fname)
+            with open(abs_path, "wb") as f:
+                f.write(raw)
+            snap_path_rel = f"uploads/snapshots/{fname}"
+            detected = count_faces(raw)
+        except Exception:
+            raise ValueError("snapshot decode failed")
+
+    try:
+        declared = int(p.get("declared_students") or 0)
+    except (ValueError, TypeError):
+        declared = 0
+
+    reasons = []
+    if conflict:        reasons.append("server_newer_state")
+    if not fp_ok:       reasons.append("fingerprint_mismatch")
+    if not in_fence:    reasons.append(f"gps_outside_fence:{int(distance_m)}m")
+    if detected < CV_MIN_CLASS_SIZE:
+        reasons.append(f"class_too_small:{detected}")
+    if declared and abs(detected - declared) > CV_MISMATCH_THRESHOLD:
+        reasons.append(f"count_mismatch:{declared}v{detected}")
+
+    result = "verified" if not reasons else "flagged"
+
+    insp = Inspection(
+        school_id=school.id,
+        inspector_id=actor.id,
+        timestamp=client_ts,
+        gps_lat=gps_lat, gps_lng=gps_lng,
+        declared_students=declared,
+        detected_faces=detected,
+        fingerprint_ok=fp_ok,
+        snapshot_path=snap_path_rel,
+        result=result,
+        notes=";".join(reasons) if reasons else "all_checks_passed",
+    )
+    db.session.add(insp)
+    db.session.flush()
+
+    if snap_path_rel:
+        db.session.add(CVSnapshot(
+            inspection_id=insp.id, image_path=snap_path_rel,
+            detected_faces=detected, image_hash=img_hash,
+        ))
+
+    # Only overwrite school status if this event is NOT a stale conflict
+    if not conflict:
+        school.verification_status = result
+        school.last_verified_at = insp.timestamp
+
+    append_to_ledger(
+        "inspection_synced",
+        {
+            "inspection_id": insp.id,
+            "school_id": school.id,
+            "actor_id": actor.id,
+            "result": result,
+            "conflict": conflict,
+            "reasons": reasons,
+            "client_uuid": ev.get("client_uuid"),
+            "client_timestamp": ev.get("client_timestamp"),
+        },
+        actor_id=actor.id,
+    )
+    refresh_triangulation(school.id)
+    return insp.id, conflict
+
+
+# =========================================================
+# 10c. TRIANGULATION API
+# =========================================================
+@app.route("/api/triangulation/<int:school_id>")
+@login_required
+def api_triangulation(school_id):
+    school = db.session.get(School, school_id) or abort(404)
+    row = TriangulationScore.query.filter_by(school_id=school_id).first()
+    if not row:
+        row = refresh_triangulation(school_id)
+        db.session.commit()
+    return jsonify({
+        "school_id": school_id,
+        "score": row.score,
+        "signal": row.signal,
+        "components": json.loads(row.components_json),
+        "computed_at": row.computed_at.isoformat(),
+    })
 
 
 # =========================================================
@@ -716,6 +1143,12 @@ def seed():
 with app.app_context():
     db.create_all()
     seed()
+
+        # Backfill triangulation for any school missing a score
+    for s in School.query.all():
+        if not TriangulationScore.query.filter_by(school_id=s.id).first():
+            refresh_triangulation(s.id)
+    db.session.commit()
 
 
 if __name__ == "__main__":

@@ -63,6 +63,8 @@ body {
   color: var(--c-text);
   background: var(--c-bg);
   -webkit-font-smoothing: antialiased;
+  position: relative;
+  min-height: 100vh;
 }
 a { color: var(--c-primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -426,4 +428,65 @@ table.grid tbody tr:hover { background: #fafbfd; }
 @keyframes slideIn {
   from { transform: translateX(20px); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* =========================================================
+   AMBIENT BACKGROUND
+   Fixed, blurred, low-opacity image + gradient scrim.
+   Scrim guarantees text contrast (WCAG AA).
+   ========================================================= */
+
+.bg-layer,
+.bg-scrim {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* The image itself. z-index 0 keeps it above the page background
+   but below all content (content sits at z-index 1+ in normal flow). */
+.bg-layer {
+  z-index: 0;
+  background-image: url("/static/img/campus_original.jpg");
+  background-size: cover;
+  background-position: center 35%;
+  background-repeat: no-repeat;
+  opacity: 0.18;
+  filter: blur(12px);
+  transform: scale(1.08);
+}
+
+/* The scrim: a wash of the page background color over the image.
+   This is what makes text readable. Tune the alpha if needed. */
+.bg-scrim {
+  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    rgba(247, 248, 250, 0.88) 0%,
+    rgba(247, 248, 250, 0.78) 100%
+  );
+}
+
+/* Lift all real content above the background layers. */
+.topbar,
+.container,
+.footer {
+  position: relative;
+  z-index: 2;
+}
+
+/* Mobile: cheaper blur, fainter image. */
+@media (max-width: 640px) {
+  .bg-layer {
+    opacity: 0.12;
+    filter: blur(8px);
+  }
+}
+
+/* Accessibility: skip the blur if requested. */
+@media (prefers-reduced-motion: reduce) {
+  .bg-layer { filter: none; }
 }

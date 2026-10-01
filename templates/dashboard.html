@@ -72,6 +72,7 @@
       {% set meta = status_meta(s.verification_status) %}
       <tr data-status="{{ s.verification_status }}">
         <td>
+            <div class="tri-badge" data-school-id="{{ s.id }}"></div>
           <div class="school-name">{{ s.name }}</div>
           <div class="school-sub">ID #{{ s.id }}</div>
         </td>
@@ -172,5 +173,19 @@
     });
   }));
 })();
+
+// Fetch triangulation for each visible school
+document.querySelectorAll('.tri-badge[data-school-id]').forEach(async (el) => {
+  const id = el.dataset.schoolId;
+  try {
+    const r = await fetch(`/api/triangulation/${id}`, { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const d = await r.json();
+    const tone = { agree: 'ok', conflict: 'bad', unknown: 'warn' }[d.signal] || 'warn';
+    el.innerHTML =
+      `<span class="pill ${tone}" title="score ${d.score}">` +
+      `<span class="dot"></span>${d.signal} · ${d.score.toFixed(2)}</span>`;
+  } catch (_) { /* silent */ }
+});
 </script>
 {% endblock %}
