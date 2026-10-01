@@ -1,6 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Sign in{% endblock %}
 {% block content %}
+<style>
+  /* Login-only backdrop. Highest specificity — no other file changes needed. */
+  body .bg-layer {
+    background-image: url("{{ url_for('static', filename='img/campus_original.jpg') }}") !important;
+    opacity: 0.16 !important;
+    filter: blur(26px) saturate(1.05) !important;
+    transform: scale(1.12) !important;
+  }
+  body .bg-scrim {
+    background: linear-gradient(
+      180deg,
+      rgba(247,248,250,0.90) 0%,
+      rgba(247,248,250,0.72) 55%,
+      rgba(247,248,250,0.92) 100%
+    ) !important;
+  }
+  @media (max-width: 640px) {
+    body .bg-layer { opacity: 0.12 !important; filter: blur(20px) saturate(1.05) !important; }
+  }
+</style>
+
+
 <div class="card narrow">
   <div class="card-header">
     <div>

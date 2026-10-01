@@ -46,6 +46,22 @@
   /* Motion (respect reduced-motion) */
   --t-fast: 120ms ease;
   --t-med:  200ms ease;
+
+  :root {
+  /* ... existing color/space/type tokens stay unchanged ... */
+
+  /* ---- Ambient Ajrak background tokens ---- */
+  --ajrak-opacity:      0.10;   /* very low: Ajrak is visually loud */
+  --ajrak-blur:         22px;   /* heavy: kills the diamond/textile detail */
+  --ajrak-saturate:     1.10;   /* slight warmth boost */
+  --ajrak-scale:        1.10;   /* hides blur bleed at edges */
+  --ajrak-position:     center;
+
+  /* Scrim: gradient of the page background color */
+  --bg-scrim-top:       rgba(247, 248, 250, 0.88);
+  --bg-scrim-mid:       rgba(247, 248, 250, 0.78);
+  --bg-scrim-bot:       rgba(247, 248, 250, 0.86);
+}
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -436,38 +452,54 @@ table.grid tbody tr:hover { background: #fafbfd; }
    Scrim guarantees text contrast (WCAG AA).
    ========================================================= */
 
+/* =========================================================
+   AMBIENT AJRAK BACKGROUND
+   Cultural grounding (HCI #2) with strict readability guardrails.
+   Two layers:
+     .bg-layer  → the Ajrak image (blurred, dim, fixed)
+     .bg-scrim  → page-colored wash that guarantees text contrast
+   ========================================================= */
+
 .bg-layer,
 .bg-scrim {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
+  z-index: -1;
   pointer-events: none;
 }
 
-/* The image itself. z-index 0 keeps it above the page background
-   but below all content (content sits at z-index 1+ in normal flow). */
 .bg-layer {
-  z-index: 0;
-  background-image: url("/static/img/campus_original.jpg");
+  background-image: url("../img/ajrak_original.jpg");
   background-size: cover;
-  background-position: center 35%;
+  background-position: var(--ajrak-position);
   background-repeat: no-repeat;
-  opacity: 0.18;
-  filter: blur(12px);
-  transform: scale(1.08);
+  background-attachment: fixed;
+
+  opacity: var(--ajrak-opacity);
+  filter: blur(var(--ajrak-blur)) saturate(var(--ajrak-saturate));
+  transform: scale(var(--ajrak-scale));
+  will-change: opacity;
 }
 
-/* The scrim: a wash of the page background color over the image.
-   This is what makes text readable. Tune the alpha if needed. */
+/* Scrim: three-stop gradient so the topbar area and footer edges
+   stay extra quiet, while the middle breathes a touch more Ajrak. */
 .bg-scrim {
-  z-index: 1;
   background: linear-gradient(
     180deg,
-    rgba(247, 248, 250, 0.88) 0%,
-    rgba(247, 248, 250, 0.78) 100%
+    var(--bg-scrim-top) 0%,
+    var(--bg-scrim-mid) 45%,
+    var(--bg-scrim-bot) 100%
   );
+}
+
+/* Print: never print the backdrop */
+@media print {
+  .bg-layer, .bg-scrim { display: none; }
+}
+
+/* Reduce motion: keep it static, no animations exist here anyway */
+@media (prefers-reduced-motion: reduce) {
+  .bg-layer { filter: blur(var(--ajrak-blur)) saturate(var(--ajrak-saturate)); }
 }
 
 /* Lift all real content above the background layers. */
@@ -490,3 +522,4 @@ table.grid tbody tr:hover { background: #fafbfd; }
 @media (prefers-reduced-motion: reduce) {
   .bg-layer { filter: none; }
 }
+
