@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ school.name }}{% endblock %}
+{% block content %}
+
+<div class="row between mb-4">
+  <div>
+    <h1 style="margin-bottom:4px">{{ school.name }}</h1>
+    <p class="muted" style="margin:0">
+      {{ school.village or '—' }} · {{ school.geo_lat }}, {{ school.geo_lng }} ·
+      registered {{ school.registered_students }}
+    </p>
+  </div>
+  {% set meta = status_meta(school.verification_status) %}
+  <span class="pill {{ meta.tone }}">
+    <span class="dot"></span>{{ meta.label }}
+  </span>
+</div>
+
+{% if current_user.role == 'inspector' %}
+<a class="btn primary mb-4" href="{{ url_for('checkin', school_id=school.id) }}">
+  Re-verify this school →
+</a>
+{% endif %}
+
+<h2>Inspection history</h2>
+{% if inspections %}
+<div class="table-wrap mb-4">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Declared</th>
+        <th>Detected</th>
+        <th>Fingerprint</th>
+        <th>Result</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in inspections %}
+      <tr>
+        <td>{{ i.timestamp.strftime('%d %b %Y, %H:%M') }}</td>
+        <td>{{ i.declared_students }}</td>
+        <td>{{ i.detected_faces }}</td>
+        <td>
+          {% if i.fingerprint_ok %}
+            <span class="pill ok"><span class="dot"></span>Matched</span>
+          {% else %}
+            <span class="pill bad"><span class="dot"></span>Mismatch</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="pill {{ 'ok' if i.result=='verified' else 'bad' }}">
+            <span class="dot"></span>{{ i.result }}
+          </span>
+        </td>
+        <td class="mono" style="max-width:280px; word-break:break-word">{{ i.notes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty mb-4">
+  <div class="empty-icon" aria-hidden="true">📋</div>
+  <p style="margin:0"><strong>No inspections yet.</strong></p>
+  <p class="hint">This school has never been verified.</p>
+</div>
+{% endif %}
+
+<h2>Parent reports</h2>
+{% if reports %}
+<ul style="padding-left:18px">
+  {% for r in reports %}
+    <li style="margin:6px 0">
+      <span class="pill info"><span class="dot"></span>{{ r.category }}</span>
+      {{ r.text }}
+      <span class="hint">— {{ r.created_at.strftime('%d %b %Y') }}</span>
+    </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="hint">No reports from parents yet.</p>
+{% endif %}
+
+{% endblock %}

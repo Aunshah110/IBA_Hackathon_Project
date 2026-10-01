@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Audit ledger{% endblock %}
+{% block content %}
+
+<div class="row between mb-4">
+  <div>
+    <h1 style="margin-bottom:4px">Audit ledger</h1>
+    <p class="muted" style="margin:0">
+      Append-only hash chain. Any tampering breaks the chain visibly.
+    </p>
+  </div>
+  <div class="chain-badge {{ 'ok' if chain.valid else 'bad' }}" role="status" aria-live="polite">
+    {% if chain.valid %}
+      <span class="pulse"></span> Chain valid · {{ chain.total }} events
+    {% else %}
+      <span class="dot" style="background:currentColor"></span>
+      Chain BROKEN at #{{ chain.broken_at }} · {{ chain.reason }}
+    {% endif %}
+  </div>
+</div>
+
+{% if chain.valid %}
+<div class="banner ok" role="status">
+  <span class="banner-icon" aria-hidden="true">✓</span>
+  <div class="banner-body">
+    <div class="banner-title">Integrity verified</div>
+    <div>Every event hash matches its predecessor. No edits have been made.</div>
+  </div>
+</div>
+{% else %}
+<div class="banner bad" role="alert">
+  <span class="banner-icon" aria-hidden="true">!</span>
+  <div class="banner-body">
+    <div class="banner-title">Chain broken at event #{{ chain.broken_at }}</div>
+    <div>A record was modified or deleted. Escalate immediately to provincial level.</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="table-wrap">
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>When</th>
+        <th>Event</th>
+        <th>Actor</th>
+        <th>Prev hash</th>
+        <th>Current hash</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.created_at.strftime('%d %b %Y, %H:%M:%S') }}</td>
+        <td><span class="pill info"><span class="dot"></span>{{ r.event_type }}</span></td>
+        <td>{{ r.actor_id or '—' }}</td>
+        <td class="mono">{{ r.prev_hash[:16] }}…</td>
+        <td class="mono">{{ r.curr_hash[:16] }}…</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

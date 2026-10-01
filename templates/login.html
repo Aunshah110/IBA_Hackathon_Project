@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <div class="card-header">
+    <div>
+      <h1 class="card-title">Sign in</h1>
+      <p class="card-sub">Ghost School Detection System</p>
+    </div>
+  </div>
+
+  <form method="post" autocomplete="off" novalidate>
+    <label class="field">
+      <span class="field-label">Username</span>
+      <input class="input" name="username" required autofocus
+             autocomplete="username" aria-label="Username">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Password</span>
+      <input class="input" type="password" name="password" required
+             autocomplete="current-password" aria-label="Password">
+    </label>
+
+    <button type="submit" class="btn primary block lg">Sign in</button>
+  </form>
+
+  <div class="banner info mt-4" role="note">
+    <span class="banner-icon" aria-hidden="true">i</span>
+    <div class="banner-body">
+      <div class="banner-title">Demo accounts</div>
+      <div class="mono">
+        district1 / district123 · inspector1 / inspect123<br>
+        teacher1 / teach123 · parent1 / parent123
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

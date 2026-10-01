@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="row between mb-4">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="muted" style="margin:0">
+      Signed in as <strong>{{ current_user.role }}</strong> ·
+      {{ schools|length }} school{{ '' if schools|length == 1 else 's' }} in scope
+    </p>
+  </div>
+  <div id="chainBadgeSlot" class="chain-badge ok" role="status" aria-live="polite">
+    <span class="pulse" aria-hidden="true"></span>
+    <span id="chainBadgeText">Ledger: checking…</span>
+  </div>
+</div>
+
+{# --- KPI strip: HCI visibility of system status (#1) --- #}
+{% if role in ['district','inspector'] %}
+{% set n_total = schools|length %}
+{% set n_ok    = schools | selectattr('verification_status','equalto','verified')   | list | length %}
+{% set n_bad   = schools | selectattr('verification_status','equalto','flagged')    | list | length %}
+{% set n_warn  = schools | selectattr('verification_status','equalto','unverified') | list | length %}
+<div class="kpis mb-4">
+  <div class="kpi">
+    <div class="kpi-label">Schools</div>
+    <div class="kpi-value">{{ n_total }}</div>
+    <div class="kpi-meta">in your scope</div>
+  </div>
+  <div class="kpi tone-ok">
+    <div class="kpi-label">Verified</div>
+    <div class="kpi-value">{{ n_ok }}</div>
+    <div class="kpi-meta">all checks passed</div>
+  </div>
+  <div class="kpi tone-bad">
+    <div class="kpi-label">Flagged</div>
+    <div class="kpi-value">{{ n_bad }}</div>
+    <div class="kpi-meta">needs follow-up</div>
+  </div>
+  <div class="kpi tone-warn">
+    <div class="kpi-label">Unverified</div>
+    <div class="kpi-value">{{ n_warn }}</div>
+    <div class="kpi-meta">never checked</div>
+  </div>
+</div>
+
+<div class="row between mb-4">
+  <div class="chips" role="group" aria-label="Filter schools">
+    <button class="chip active" data-filter="all">All</button>
+    <button class="chip" data-filter="verified">● Verified</button>
+    <button class="chip" data-filter="flagged">● Flagged</button>
+    <button class="chip" data-filter="unverified">● Unverified</button>
+  </div>
+</div>
+
+{% if schools %}
+<div class="table-wrap">
+  <table class="grid" id="schoolsTable">
+    <thead>
+      <tr>
+        <th scope="col">School</th>
+        <th scope="col">Village</th>
+        <th scope="col">Registered</th>
+        <th scope="col">Status</th>
+        <th scope="col">Last verified</th>
+        <th scope="col"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in schools %}
+      {% set meta = status_meta(s.verification_status) %}
+      <tr data-status="{{ s.verification_status }}">
+        <td>
+          <div class="school-name">{{ s.name }}</div>
+          <div class="school-sub">ID #{{ s.id }}</div>
+        </td>
+        <td>{{ s.village or '—' }}</td>
+        <td>{{ s.registered_students }}</td>
+        <td>
+          <span class="pill {{ meta.tone }}">
+            <span class="dot" aria-hidden="true"></span>{{ meta.label }}
+          </span>
+        </td>
+        <td class="muted">
+          {{ s.last_verified_at.strftime('%d %b %Y, %H:%M') if s.last_verified_at else '—' }}
+        </td>
+        <td>
+          <div class="row" style="gap:6px">
+            <a class="btn" href="{{ url_for('school_detail', school_id=s.id) }}"
+               aria-label="View details for {{ s.name }}">View</a>
+            {% if role == 'inspector' %}
+            <a class="btn primary" href="{{ url_for('checkin', school_id=s.id) }}"
+               aria-label="Verify {{ s.name }}">Verify</a>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty">
+  <div class="empty-icon" aria-hidden="true">🏫</div>
+  <p style="margin:0 0 4px"><strong>No schools in your scope yet.</strong></p>
+  <p class="hint">Contact your district office to be assigned.</p>
+</div>
+{% endif %}
+
+{% elif role == 'teacher' %}
+  {% if schools %}
+    <div class="card">
+      <h2 class="card-title">My assigned schools</h2>
+      <ul style="padding-left:18px">
+        {% for s in schools %}
+          {% set meta = status_meta(s.verification_status) %}
+          <li style="margin:8px 0">
+            <strong>{{ s.name }}</strong> — {{ s.village }}
+            <span class="pill {{ meta.tone }}"><span class="dot"></span>{{ meta.label }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    <div class="empty">
+      <div class="empty-icon" aria-hidden="true">🏫</div>
+      <p><strong>No school assigned.</strong></p>
+    </div>
+  {% endif %}
+
+{% elif role == 'parent' %}
+  <div class="card">
+    <h2 class="card-title">Report an issue</h2>
+    <p class="muted">Your report is anonymous and helps triangulate problems across the district.</p>
+    <a class="btn primary lg" href="{{ url_for('parent_report') }}">Submit a report →</a>
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // Live chain status (HCI: visibility of status)
+  const badge = document.getElementById('chainBadgeSlot');
+  const text  = document.getElementById('chainBadgeText');
+  if (badge && text) {
+    fetch('{{ url_for("api_chain_status") }}')
+      .then(r => r.json())
+      .then(d => {
+        if (d.valid) {
+          badge.className = 'chain-badge ok';
+          text.textContent = `Ledger: valid · ${d.total} events`;
+        } else {
+          badge.className = 'chain-badge bad';
+          text.textContent = `Ledger: BROKEN at #${d.broken_at}`;
+        }
+      })
+      .catch(() => { text.textContent = 'Ledger: offline'; });
+  }
+
+  // Filter chips
+  const chips = document.querySelectorAll('.chip[data-filter]');
+  const rows  = document.querySelectorAll('#schoolsTable tbody tr');
+  chips.forEach(c => c.addEventListener('click', () => {
+    chips.forEach(x => x.classList.remove('active'));
+    c.classList.add('active');
+    const f = c.dataset.filter;
+    rows.forEach(r => {
+      r.style.display = (f === 'all' || r.dataset.status === f) ? '' : 'none';
+    });
+  }));
+})();
+</script>
+{% endblock %}

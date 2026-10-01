@@ -1,0 +1,24 @@
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+Flask-Login==0.6.3
+Flask-WTF==1.2.1
+WTForms==3.1.2
+SQLAlchemy==2.0.30
+Werkzeug==3.0.3
+Jinja2==3.1.4
+itsdangerous==2.2.0
+click==8.1.7
+blinker==1.8.2
+
+# Optional — comment out on Windows / no cmake
+opencv-python==4.10.0.84
+numpy==1.26.4
+face-recognition==1.3.0
+Pillow==10.3.0
+
+# Mocked for demo (real SDK needs GT-521F52 hardware)
+# pyfingerprint==1.5
+# pyserial==3.5
+
+geopy==2.4.1
+python-dotenv==1.0.1

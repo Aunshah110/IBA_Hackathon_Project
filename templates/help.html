@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Help{% endblock %}
+{% block content %}
+
+<h1>Help</h1>
+<p class="muted">Quick answers for inspectors, teachers, parents and district officers.</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h2 class="card-title">For inspectors</h2>
+    <ol style="padding-left:18px">
+      <li>Open <strong>Dashboard</strong> → click <strong>Verify</strong> next to a school.</li>
+      <li><strong>Scan fingerprint</strong> on the reader (or Simulate in demo).</li>
+      <li>Click <strong>Capture GPS</strong> — you must be within 200 m of the school.</li>
+      <li>Click <strong>Start camera</strong>, then <strong>Take snapshot</strong>.</li>
+      <li>Enter the number of students actually present, then <strong>Submit</strong>.</li>
+    </ol>
+    <p class="hint">If a step fails, the banner at the bottom tells you exactly what's missing.</p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Reading a status pill</h2>
+    <p>
+      <span class="pill ok"><span class="dot"></span>Verified</span>
+      all checks passed at the last inspection
+    </p>
+    <p>
+      <span class="pill bad"><span class="dot"></span>Flagged</span>
+      at least one check failed — see <em>Inspection history</em>
+    </p>
+    <p>
+      <span class="pill warn"><span class="dot"></span>Unverified</span>
+      never inspected, or inspection data is stale
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">The audit ledger</h2>
+    <p>
+      Every action is hashed and chained. If someone edits the database directly,
+      the chain breaks and the audit page shows the exact event number.
+    </p>
+    <p class="hint">District officers and inspectors can view it. Parents cannot.</p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">For parents</h2>
+    <p>Your report is anonymous. We never store your IP address in plain form.</p>
+    <p>Reports are used to <em>triangulate</em> — one report alone doesn't trigger action, but a pattern does.</p>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a4d8f">
+  <title>{% block title %}{{ app_name }}{% endblock %} · {{ app_full }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <a href="#main" class="sr-only">Skip to content</a>
+
+  {% if current_user.is_authenticated %}
+  <header class="topbar" role="banner">
+    <div class="topbar-inner">
+      <a class="brand" href="{{ url_for('dashboard') }}">
+        <span class="brand-mark" aria-hidden="true">GS</span>
+        <span class="brand-text">Ghost School Detection</span>
+      </a>
+
+      <nav class="nav" aria-label="Primary">
+        <a href="{{ url_for('dashboard') }}"
+           class="{{ 'active' if request.endpoint == 'dashboard' }}">
+          <span aria-hidden="true">📋</span> Dashboard
+        </a>
+        {% if current_user.role in ['district','inspector'] %}
+        <a href="{{ url_for('audit_log') }}"
+           class="{{ 'active' if request.endpoint == 'audit_log' }}">
+          <span aria-hidden="true">🔐</span> Audit
+        </a>
+        {% endif %}
+        {% if current_user.is_parent %}
+        <a href="{{ url_for('parent_report') }}"
+           class="{{ 'active' if request.endpoint == 'parent_report' }}">
+          <span aria-hidden="true">✉️</span> Report
+        </a>
+        {% endif %}
+        <a href="{{ url_for('help_page') }}"
+           class="{{ 'active' if request.endpoint == 'help_page' }}">Help</a>
+      </nav>
+
+      <div class="row" style="gap:8px">
+        <span class="user-chip" title="{{ current_user.role }}">
+          <span class="dot" aria-hidden="true"></span>
+          {{ current_user.full_name or current_user.username }}
+        </span>
+        <a class="btn ghost" href="{{ url_for('logout') }}">Logout</a>
+      </div>
+    </div>
+  </header>
+  {% endif %}
+
+  <main id="main" class="container" role="main">
+    {# Structured verify-result banner (HCI: feedback & closure #12) #}
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}
+        {% if cat == 'verify_result' %}
+          {% set d = m | tojson | safe %}
+          <div id="verifyResult" data-payload='{{ d }}'></div>
+        {% endif %}
+      {% endfor %}
+    {% endwith %}
+
+    {# Standard flashes #}
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs if cat != 'verify_result' %}
+        <div class="banner {{ 'ok' if cat=='success' else 'bad' if cat=='error' else 'info' }}"
+             role="alert">
+          <span class="banner-icon" aria-hidden="true">
+            {{ '✓' if cat=='success' else '!' if cat=='error' else 'i' }}
+          </span>
+          <div class="banner-body">
+            <div class="banner-title">{{ 'Success' if cat=='success' else 'Something needs attention' if cat=='error' else 'Notice' }}</div>
+            <div>{{ m }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    {{ app_full }} · v2 · {{ current_year }}
+  </footer>
+
+  <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

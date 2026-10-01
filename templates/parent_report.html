@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Report a school{% endblock %}
+{% block content %}
+
+<div class="card narrow">
+  <div class="card-header">
+    <div>
+      <h1 class="card-title">Report an issue</h1>
+      <p class="card-sub">Anonymous · helps triangulate across sources</p>
+    </div>
+  </div>
+
+  <form method="post" novalidate>
+    <label class="field">
+      <span class="field-label">Which school?</span>
+      <select class="input" name="school_id" required>
+        {% for s in schools %}
+          <option value="{{ s.id }}">{{ s.name }} — {{ s.village }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">What did you see?</span>
+      <select class="input" name="category">
+        <option value="no_teacher">No teacher present</option>
+        <option value="no_class">No class happening</option>
+        <option value="closed">School closed</option>
+        <option value="other">Something else</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">Details (optional)</span>
+      <textarea class="input" name="text" maxlength="2000" rows="4"
+                placeholder="What did you observe? When?"></textarea>
+      <span class="hint">Your IP is hashed, never stored raw.</span>
+    </label>
+
+    <button type="submit" class="btn primary block lg">Submit report</button>
+  </form>
+</div>
+
+{% endblock %}

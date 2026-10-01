@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Verify {{ school.name }}{% endblock %}
+{% block content %}
+
+<div class="row between mb-4">
+  <div>
+    <h1 style="margin-bottom:4px">Verify school</h1>
+    <p class="muted" style="margin:0">
+      <strong>{{ school.name }}</strong> · {{ school.village or '—' }} ·
+      Registered students: {{ school.registered_students }}
+    </p>
+  </div>
+  <a class="btn ghost" href="{{ url_for('dashboard') }}">← Back</a>
+</div>
+
+{# HCI: visibility of system status — progress stepper #}
+<ol class="stepper" id="stepper" aria-label="Verification steps">
+  <li data-step="1" class="active" data-n="1">Fingerprint</li>
+  <li data-step="2" data-n="2">Location</li>
+  <li data-step="3" data-n="3">Snapshot</li>
+  <li data-step="4" data-n="4">Declare</li>
+</ol>
+
+<form id="verifyForm" method="post" action="{{ url_for('verify') }}" enctype="multipart/form-data" novalidate>
+  <input type="hidden" name="school_id" value="{{ school.id }}">
+
+  {# ---- Step 1: Fingerprint ---- #}
+  <section class="step-card" id="step1">
+    <header class="step-head">
+      <span class="step-num">1</span>
+      <div>
+        <p class="step-title">Enrolled fingerprint</p>
+        <p class="step-help">Confirms the inspector is physically present, not a delegate.</p>
+      </div>
+    </header>
+    <div class="row">
+      <button type="button" id="scanFp" class="btn primary">Scan fingerprint</button>
+      <span id="fpStatus" class="pill warn"><span class="dot"></span>Not scanned</span>
+    </div>
+    <input type="hidden" name="fingerprint_token" id="fpToken">
+  </section>
+
+  {# ---- Step 2: GPS ---- #}
+  <section class="step-card" id="step2">
+    <header class="step-head">
+      <span class="step-num">2</span>
+      <div>
+        <p class="step-title">Current location</p>
+        <p class="step-help">
+          Must be within {{ 200 }} m of the school.
+          <span class="tip" tabindex="0"
+                data-tip="Geofence prevents check-in from a desk.">?</span>
+        </p>
+      </div>
+    </header>
+    <div class="row">
+      <button type="button" id="getGps" class="btn">Capture GPS</button>
+      {% if demo_mode %}
+      <button type="button" id="useSchoolGps" class="btn ghost"
+              data-lat="{{ school.geo_lat }}" data-lng="{{ school.geo_lng }}"
+              title="Demo only: simulate being at the school">
+        Use school GPS (demo)
+      </button>
+      {% endif %}
+      <span id="gpsStatus" class="pill warn"><span class="dot"></span>Not captured</span>
+    </div>
+    <input type="hidden" name="gps_lat" id="gpsLat">
+    <input type="hidden" name="gps_lng" id="gpsLng">
+  </section>
+
+  {# ---- Step 3: Snapshot ---- #}
+  <section class="step-card" id="step3">
+    <header class="step-head">
+      <span class="step-num">3</span>
+      <div>
+        <p class="step-title">Classroom snapshot</p>
+        <p class="step-help">Detects faces present at the time of inspection.</p>
+      </div>
+    </header>
+    <div class="row" style="align-items:flex-start">
+      <div class="cam-frame" id="camFrame">
+        <video id="cam" autoplay playsinline muted aria-label="Camera preview"></video>
+        <img id="preview" alt="Snapshot preview" style="display:none">
+        <div class="cam-placeholder" id="camPlaceholder">
+          <div class="cam-icon" aria-hidden="true">📸</div>
+          <div>Camera off</div>
+        </div>
+      </div>
+      <div class="stack">
+        <button type="button" id="startCam" class="btn">Start camera</button>
+        <button type="button" id="snap" class="btn" disabled>Take snapshot</button>
+        <span id="camStatus" class="pill warn"><span class="dot"></span>No snapshot</span>
+      </div>
+    </div>
+    <canvas id="canvas" style="display:none"></canvas>
+  </section>
+
+  {# ---- Step 4: Declared count ---- #}
+  <section class="step-card" id="step4">
+    <header class="step-head">
+      <span class="step-num">4</span>
+      <div>
+        <p class="step-title">Students present</p>
+        <p class="step-help">Compare with the register — do not pre-fill from memory.</p>
+      </div>
+    </header>
+    <label class="field" style="max-width:260px">
+      <span class="field-label">Declared count</span>
+      <input class="input" type="number" min="0" name="declared_students"
+             value="{{ school.registered_students }}" required>
+      <span class="hint">Registered: {{ school.registered_students }}</span>
+    </label>
+  </section>
+
+  <div class="row between mt-4">
+    <a class="btn ghost" href="{{ url_for('dashboard') }}">Cancel</a>
+    <button type="submit" id="submitBtn" class="btn primary lg" disabled
+            aria-disabled="true"
+            title="Complete fingerprint, location and snapshot first">
+      Submit verification
+    </button>
+  </div>
+
+  <div class="banner warn mt-4" id="submitHint" role="note">
+    <span class="banner-icon" aria-hidden="true">!</span>
+    <div class="banner-body">
+      <div class="banner-title">Before you can submit</div>
+      <ul style="margin:4px 0 0; padding-left:18px" id="submitReasons">
+        <li>Scan fingerprint</li>
+        <li>Capture location</li>
+        <li>Take snapshot</li>
+      </ul>
+    </div>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/geolocation.js') }}"></script>
+<script src="{{ url_for('static', filename='js/webcam.js') }}"></script>
+{% endblock %}
